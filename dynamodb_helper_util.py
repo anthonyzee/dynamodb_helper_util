@@ -105,7 +105,7 @@ def scanItem(oTableObject, oDynQueryObject):
         }
 
         return oDataResponse
-
+    
 def parseDynQueryString(sUrlQueryString, oConditionlist):
     
     #field_1 eq 'field_1' and field_2 eq 'field_2/1.json'
@@ -209,12 +209,23 @@ def queryItemFirst(oTableObject, oDynQueryObject):
 
     return oDataResponse
 
-def queryItem(oTableObject, oDynQueryObject):
+def isKey(sFieldName, oKeyObject):
+    
+    if oKeyObject == None:
+        return True
+    
+    if sFieldName in oKeyObject:
+        return True
+    else:
+        return False
+    
+def queryItem(oTableObject, oDynQueryObject, oKeyObject):
 
     oExpressionAttributeValues = {}
     oExpressionAttributeNames = {}
     sKeyConditionExpression = ""
-
+    sFilterConditionExpression = ""
+    
     for oConditionObject in oDynQueryObject:
 
         if oConditionObject["condition_value"][0] == '\'':
@@ -224,28 +235,80 @@ def queryItem(oTableObject, oDynQueryObject):
 
         oExpressionAttributeValues[':' + oConditionObject["condition_field"]] = oConditionObject["condition_value"]
         oExpressionAttributeNames['#' + oConditionObject["condition_field"]] = oConditionObject['condition_field']
-
-        if sKeyConditionExpression == '':
-            sKeyConditionExpression = "#" + oConditionObject["condition_field"] + ' ' + oConditionObject['condition_op'] + " :" + oConditionObject["condition_field"]
+        
+        if isKey(oConditionObject['condition_field'], oKeyObject):
+            
+            if sKeyConditionExpression == '':
+                sKeyConditionExpression = "#" + oConditionObject["condition_field"] + ' ' + oConditionObject['condition_op'] + " :" + oConditionObject["condition_field"]
+            else:
+                sKeyConditionExpression = sKeyConditionExpression + ' ' + oConditionObject['next_condition_logic'] + " #" + oConditionObject["condition_field"] + ' ' + oConditionObject['condition_op'] + " :" + oConditionObject["condition_field"]
+        
         else:
-            sKeyConditionExpression = sKeyConditionExpression + ' ' + oConditionObject['next_condition_logic'] + " #" + oConditionObject["condition_field"] + ' ' + oConditionObject['condition_op'] + " :" + oConditionObject["condition_field"]
-
-    oDynResponseObject = oTableObject.query(
-        ExpressionAttributeValues = oExpressionAttributeValues,
-        ExpressionAttributeNames = oExpressionAttributeNames,
-        KeyConditionExpression=sKeyConditionExpression                
-    )
-    oItemList = oDynResponseObject['Items']
-
-    while 'LastEvaluatedKey' in oDynResponseObject:
+ 
+            if sFilterConditionExpression == '':
+                sFilterConditionExpression = "#" + oConditionObject["condition_field"] + ' ' + oConditionObject['condition_op'] + " :" + oConditionObject["condition_field"]
+            else:
+                sFilterConditionExpression = sFilterConditionExpression + ' ' + oConditionObject['next_condition_logic'] + " #" + oConditionObject["condition_field"] + ' ' + oConditionObject['condition_op'] + " :" + oConditionObject["condition_field"]
+            
+    if sKeyConditionExpression != "" and sFilterConditionExpression != "":
+        
         oDynResponseObject = oTableObject.query(
             ExpressionAttributeValues = oExpressionAttributeValues,
             ExpressionAttributeNames = oExpressionAttributeNames,
             KeyConditionExpression=sKeyConditionExpression,
-            ExclusiveStartKey=oDynResponseObject['LastEvaluatedKey']
+            FilterConditionExpress=sFilterConditionExpression
         )
-        oItemList.extend(oDynResponseObject['Items'])
 
+        oItemList = oDynResponseObject['Items']
+    
+        while 'LastEvaluatedKey' in oDynResponseObject:
+            oDynResponseObject = oTableObject.query(
+                ExpressionAttributeValues = oExpressionAttributeValues,
+                ExpressionAttributeNames = oExpressionAttributeNames,
+                KeyConditionExpression=sKeyConditionExpression,
+                FilterExpression=sFilterConditionExpression,
+                ExclusiveStartKey=oDynResponseObject['LastEvaluatedKey']
+            )
+            oItemList.extend(oDynResponseObject['Items'])
+    
+    elif sKeyConditionExpression == "" and sFilterConditionExpression != "":
+
+        oDynResponseObject = oTableObject.scan(
+            ExpressionAttributeValues = oExpressionAttributeValues,
+            ExpressionAttributeNames = oExpressionAttributeNames,
+            FilterExpression=sFilterConditionExpression
+        )
+
+        oItemList = oDynResponseObject['Items']
+    
+        while 'LastEvaluatedKey' in oDynResponseObject:
+            oDynResponseObject = oTableObject.scan(
+                ExpressionAttributeValues = oExpressionAttributeValues,
+                ExpressionAttributeNames = oExpressionAttributeNames,
+                FilterExpression=sFilterConditionExpression,
+                ExclusiveStartKey=oDynResponseObject['LastEvaluatedKey']
+            )
+            oItemList.extend(oDynResponseObject['Items'])
+            
+    else:
+        
+        oDynResponseObject = oTableObject.query(
+            ExpressionAttributeValues = oExpressionAttributeValues,
+            ExpressionAttributeNames = oExpressionAttributeNames,
+            KeyConditionExpression=sKeyConditionExpression                
+        )
+        
+        oItemList = oDynResponseObject['Items']
+    
+        while 'LastEvaluatedKey' in oDynResponseObject:
+            oDynResponseObject = oTableObject.query(
+                ExpressionAttributeValues = oExpressionAttributeValues,
+                ExpressionAttributeNames = oExpressionAttributeNames,
+                KeyConditionExpression=sKeyConditionExpression,
+                ExclusiveStartKey=oDynResponseObject['LastEvaluatedKey']
+            )
+            oItemList.extend(oDynResponseObject['Items'])
+            
     #oResponseObject = oTableObject.query(
     #    ExpressionAttributeValues = {":field_1": "dpl-field_1",":field_2": "field_2/2000000000000000000.json"},
     #    ExpressionAttributeNames = {"#field_1": "field_1","#field_2": "field_2"},
@@ -267,6 +330,19 @@ def deleteItem(oKeyObject, oTableObject):
 
     return oResponseObject
 
+def getKeyObject(sTableName, oTableKeyObject):
+    
+    # example of oKeyObject
+    #oTableKeyObject = {
+    #    "table_name_1": ["field_1","field_2"],
+    #    "table_name_2": ["field_1","field_2"]
+    #}
+    
+    if sTableName in oTableKeyObject:
+        return oTableKeyObject[sTableName]
+    else:
+        return None
+        
 class DecimalEncoder(json.JSONEncoder):
   def default(self, obj):
     if isinstance(obj, Decimal):
