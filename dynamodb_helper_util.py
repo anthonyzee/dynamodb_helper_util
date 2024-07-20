@@ -324,6 +324,116 @@ def queryItem(oTableObject, oDynQueryObject, oKeyObject):
 
     return oDataResponse
 
+def queryItemWithProjection(oTableObject, oDynQueryObject, oKeyObject, sProjectionExp):
+
+    oExpressionAttributeValues = {}
+    oExpressionAttributeNames = {}
+    sKeyConditionExpression = ""
+    sFilterConditionExpression = ""
+    
+    for oConditionObject in oDynQueryObject:
+
+        if oConditionObject["condition_value"][0] == '\'':
+            oConditionObject["condition_value"] = oConditionObject["condition_value"][1:-1]
+        else:
+            oConditionObject["condition_value"] = int(oConditionObject["condition_value"][1:-1])
+
+        oExpressionAttributeValues[':' + oConditionObject["condition_field"]] = oConditionObject["condition_value"]
+        oExpressionAttributeNames['#' + oConditionObject["condition_field"]] = oConditionObject['condition_field']
+        
+        if isKey(oConditionObject['condition_field'], oKeyObject):
+            
+            if sKeyConditionExpression == '':
+                sKeyConditionExpression = "#" + oConditionObject["condition_field"] + ' ' + oConditionObject['condition_op'] + " :" + oConditionObject["condition_field"]
+            else:
+                sKeyConditionExpression = sKeyConditionExpression + ' ' + oConditionObject['next_condition_logic'] + " #" + oConditionObject["condition_field"] + ' ' + oConditionObject['condition_op'] + " :" + oConditionObject["condition_field"]
+        
+        else:
+ 
+            if sFilterConditionExpression == '':
+                sFilterConditionExpression = "#" + oConditionObject["condition_field"] + ' ' + oConditionObject['condition_op'] + " :" + oConditionObject["condition_field"]
+            else:
+                sFilterConditionExpression = sFilterConditionExpression + ' ' + oConditionObject['next_condition_logic'] + " #" + oConditionObject["condition_field"] + ' ' + oConditionObject['condition_op'] + " :" + oConditionObject["condition_field"]
+    
+    if sKeyConditionExpression != "" and sFilterConditionExpression != "":
+        
+        oDynResponseObject = oTableObject.query(
+            ProjectionExpression = sProjectionExp,
+            ExpressionAttributeValues = oExpressionAttributeValues,
+            ExpressionAttributeNames = oExpressionAttributeNames,
+            KeyConditionExpression=sKeyConditionExpression,
+            FilterExpression=sFilterConditionExpression
+        )
+
+        oItemList = oDynResponseObject['Items']
+    
+        while 'LastEvaluatedKey' in oDynResponseObject:
+            oDynResponseObject = oTableObject.query(
+                ProjectionExpression = sProjectionExp,
+                ExpressionAttributeValues = oExpressionAttributeValues,
+                ExpressionAttributeNames = oExpressionAttributeNames,
+                KeyConditionExpression=sKeyConditionExpression,
+                FilterExpression=sFilterConditionExpression,
+                ExclusiveStartKey=oDynResponseObject['LastEvaluatedKey']
+            )
+            oItemList.extend(oDynResponseObject['Items'])
+    
+    elif sKeyConditionExpression == "" and sFilterConditionExpression != "":
+
+        oDynResponseObject = oTableObject.scan(
+            ProjectionExpression = sProjectionExp,
+            ExpressionAttributeValues = oExpressionAttributeValues,
+            ExpressionAttributeNames = oExpressionAttributeNames,
+            FilterExpression=sFilterConditionExpression
+        )
+
+        oItemList = oDynResponseObject['Items']
+    
+        while 'LastEvaluatedKey' in oDynResponseObject:
+            oDynResponseObject = oTableObject.scan(
+                ProjectionExpression = sProjectionExp,
+                ExpressionAttributeValues = oExpressionAttributeValues,
+                ExpressionAttributeNames = oExpressionAttributeNames,
+                FilterExpression=sFilterConditionExpression,
+                ExclusiveStartKey=oDynResponseObject['LastEvaluatedKey']
+            )
+            oItemList.extend(oDynResponseObject['Items'])
+            
+    else:
+        
+        oDynResponseObject = oTableObject.query(
+            ProjectionExpression = sProjectionExp,
+            ExpressionAttributeValues = oExpressionAttributeValues,
+            ExpressionAttributeNames = oExpressionAttributeNames,
+            KeyConditionExpression=sKeyConditionExpression                
+        )
+        
+        oItemList = oDynResponseObject['Items']
+    
+        while 'LastEvaluatedKey' in oDynResponseObject:
+            oDynResponseObject = oTableObject.query(
+                ExpressionAttributeValues = oExpressionAttributeValues,
+                ExpressionAttributeNames = oExpressionAttributeNames,
+                KeyConditionExpression=sKeyConditionExpression,
+                ExclusiveStartKey=oDynResponseObject['LastEvaluatedKey']
+            )
+            oItemList.extend(oDynResponseObject['Items'])
+            
+    #oResponseObject = oTableObject.query(
+    #    ExpressionAttributeValues = {":field_1": "dpl-field_1",":field_2": "field_2/2000000000000000000.json"},
+    #    ExpressionAttributeNames = {"#field_1": "field_1","#field_2": "field_2"},
+    #    KeyConditionExpression="#field_1 = :field_1 and #field_2 >= :field_2"                
+    #)
+
+    oDataResponse = {
+        "d": {
+            "__count": len(oItemList),
+            "results": oItemList
+        }
+    }
+
+    return oDataResponse
+    
 def deleteItem(oKeyObject, oTableObject):
 
     oResponseObject = oTableObject.delete_item(Key=oKeyObject)
