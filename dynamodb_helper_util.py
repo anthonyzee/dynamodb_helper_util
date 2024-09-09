@@ -105,7 +105,7 @@ def scanItem(oTableObject, oDynQueryObject):
         }
 
         return oDataResponse
-    
+
 def parseDynQueryString(sUrlQueryString, oConditionlist):
     
     #field_1 eq 'field_1' and field_2 eq 'field_2/1.json'
@@ -209,23 +209,12 @@ def queryItemFirst(oTableObject, oDynQueryObject):
 
     return oDataResponse
 
-def isKey(sFieldName, oKeyObject):
-    
-    if oKeyObject == None:
-        return True
-    
-    if sFieldName in oKeyObject:
-        return True
-    else:
-        return False
-    
-def queryItem(oTableObject, oDynQueryObject, oKeyObject):
+def queryItem(oTableObject, oDynQueryObject):
 
     oExpressionAttributeValues = {}
     oExpressionAttributeNames = {}
     sKeyConditionExpression = ""
-    sFilterConditionExpression = ""
-    
+
     for oConditionObject in oDynQueryObject:
 
         if oConditionObject["condition_value"][0] == '\'':
@@ -235,80 +224,28 @@ def queryItem(oTableObject, oDynQueryObject, oKeyObject):
 
         oExpressionAttributeValues[':' + oConditionObject["condition_field"]] = oConditionObject["condition_value"]
         oExpressionAttributeNames['#' + oConditionObject["condition_field"]] = oConditionObject['condition_field']
-        
-        if isKey(oConditionObject['condition_field'], oKeyObject):
-            
-            if sKeyConditionExpression == '':
-                sKeyConditionExpression = "#" + oConditionObject["condition_field"] + ' ' + oConditionObject['condition_op'] + " :" + oConditionObject["condition_field"]
-            else:
-                sKeyConditionExpression = sKeyConditionExpression + ' ' + oConditionObject['next_condition_logic'] + " #" + oConditionObject["condition_field"] + ' ' + oConditionObject['condition_op'] + " :" + oConditionObject["condition_field"]
-        
+
+        if sKeyConditionExpression == '':
+            sKeyConditionExpression = "#" + oConditionObject["condition_field"] + ' ' + oConditionObject['condition_op'] + " :" + oConditionObject["condition_field"]
         else:
- 
-            if sFilterConditionExpression == '':
-                sFilterConditionExpression = "#" + oConditionObject["condition_field"] + ' ' + oConditionObject['condition_op'] + " :" + oConditionObject["condition_field"]
-            else:
-                sFilterConditionExpression = sFilterConditionExpression + ' ' + oConditionObject['next_condition_logic'] + " #" + oConditionObject["condition_field"] + ' ' + oConditionObject['condition_op'] + " :" + oConditionObject["condition_field"]
-            
-    if sKeyConditionExpression != "" and sFilterConditionExpression != "":
-        
+            sKeyConditionExpression = sKeyConditionExpression + ' ' + oConditionObject['next_condition_logic'] + " #" + oConditionObject["condition_field"] + ' ' + oConditionObject['condition_op'] + " :" + oConditionObject["condition_field"]
+
+    oDynResponseObject = oTableObject.query(
+        ExpressionAttributeValues = oExpressionAttributeValues,
+        ExpressionAttributeNames = oExpressionAttributeNames,
+        KeyConditionExpression=sKeyConditionExpression                
+    )
+    oItemList = oDynResponseObject['Items']
+
+    while 'LastEvaluatedKey' in oDynResponseObject:
         oDynResponseObject = oTableObject.query(
             ExpressionAttributeValues = oExpressionAttributeValues,
             ExpressionAttributeNames = oExpressionAttributeNames,
             KeyConditionExpression=sKeyConditionExpression,
-            FilterConditionExpress=sFilterConditionExpression
+            ExclusiveStartKey=oDynResponseObject['LastEvaluatedKey']
         )
+        oItemList.extend(oDynResponseObject['Items'])
 
-        oItemList = oDynResponseObject['Items']
-    
-        while 'LastEvaluatedKey' in oDynResponseObject:
-            oDynResponseObject = oTableObject.query(
-                ExpressionAttributeValues = oExpressionAttributeValues,
-                ExpressionAttributeNames = oExpressionAttributeNames,
-                KeyConditionExpression=sKeyConditionExpression,
-                FilterExpression=sFilterConditionExpression,
-                ExclusiveStartKey=oDynResponseObject['LastEvaluatedKey']
-            )
-            oItemList.extend(oDynResponseObject['Items'])
-    
-    elif sKeyConditionExpression == "" and sFilterConditionExpression != "":
-
-        oDynResponseObject = oTableObject.scan(
-            ExpressionAttributeValues = oExpressionAttributeValues,
-            ExpressionAttributeNames = oExpressionAttributeNames,
-            FilterExpression=sFilterConditionExpression
-        )
-
-        oItemList = oDynResponseObject['Items']
-    
-        while 'LastEvaluatedKey' in oDynResponseObject:
-            oDynResponseObject = oTableObject.scan(
-                ExpressionAttributeValues = oExpressionAttributeValues,
-                ExpressionAttributeNames = oExpressionAttributeNames,
-                FilterExpression=sFilterConditionExpression,
-                ExclusiveStartKey=oDynResponseObject['LastEvaluatedKey']
-            )
-            oItemList.extend(oDynResponseObject['Items'])
-            
-    else:
-        
-        oDynResponseObject = oTableObject.query(
-            ExpressionAttributeValues = oExpressionAttributeValues,
-            ExpressionAttributeNames = oExpressionAttributeNames,
-            KeyConditionExpression=sKeyConditionExpression                
-        )
-        
-        oItemList = oDynResponseObject['Items']
-    
-        while 'LastEvaluatedKey' in oDynResponseObject:
-            oDynResponseObject = oTableObject.query(
-                ExpressionAttributeValues = oExpressionAttributeValues,
-                ExpressionAttributeNames = oExpressionAttributeNames,
-                KeyConditionExpression=sKeyConditionExpression,
-                ExclusiveStartKey=oDynResponseObject['LastEvaluatedKey']
-            )
-            oItemList.extend(oDynResponseObject['Items'])
-            
     #oResponseObject = oTableObject.query(
     #    ExpressionAttributeValues = {":field_1": "dpl-field_1",":field_2": "field_2/2000000000000000000.json"},
     #    ExpressionAttributeNames = {"#field_1": "field_1","#field_2": "field_2"},
@@ -324,6 +261,16 @@ def queryItem(oTableObject, oDynQueryObject, oKeyObject):
 
     return oDataResponse
 
+def isKey(sFieldName, oKeyObject):
+    
+    if oKeyObject == None:
+        return True
+    
+    if sFieldName in oKeyObject:
+        return True
+    else:
+        return False
+        
 def queryItemWithProjection(oTableObject, oDynQueryObject, oKeyObject, sProjectionExp):
 
     oExpressionAttributeValues = {}
@@ -336,7 +283,10 @@ def queryItemWithProjection(oTableObject, oDynQueryObject, oKeyObject, sProjecti
         if oConditionObject["condition_value"][0] == '\'':
             oConditionObject["condition_value"] = oConditionObject["condition_value"][1:-1]
         else:
-            oConditionObject["condition_value"] = int(oConditionObject["condition_value"][1:-1])
+            if oConditionObject["condition_value"].lower() in ['true','false']:
+                oConditionObject["condition_value"] = bool(oConditionObject["condition_value"].lower())
+            else:
+                oConditionObject["condition_value"] = int(oConditionObject["condition_value"])
 
         oExpressionAttributeValues[':' + oConditionObject["condition_field"]] = oConditionObject["condition_value"]
         oExpressionAttributeNames['#' + oConditionObject["condition_field"]] = oConditionObject['condition_field']
@@ -346,14 +296,25 @@ def queryItemWithProjection(oTableObject, oDynQueryObject, oKeyObject, sProjecti
             if sKeyConditionExpression == '':
                 sKeyConditionExpression = "#" + oConditionObject["condition_field"] + ' ' + oConditionObject['condition_op'] + " :" + oConditionObject["condition_field"]
             else:
-                sKeyConditionExpression = sKeyConditionExpression + ' ' + oConditionObject['next_condition_logic'] + " #" + oConditionObject["condition_field"] + ' ' + oConditionObject['condition_op'] + " :" + oConditionObject["condition_field"]
+                sKeyConditionExpression = sKeyConditionExpression + ' ' + oConditionObject['next_condition_logic'] + \
+                    " #" + oConditionObject["condition_field"] + ' ' + oConditionObject['condition_op'] + " :" + oConditionObject["condition_field"]
         
         else:
  
             if sFilterConditionExpression == '':
                 sFilterConditionExpression = "#" + oConditionObject["condition_field"] + ' ' + oConditionObject['condition_op'] + " :" + oConditionObject["condition_field"]
             else:
-                sFilterConditionExpression = sFilterConditionExpression + ' ' + oConditionObject['next_condition_logic'] + " #" + oConditionObject["condition_field"] + ' ' + oConditionObject['condition_op'] + " :" + oConditionObject["condition_field"]
+                sFilterConditionExpression = sFilterConditionExpression + ' ' + oConditionObject['next_condition_logic'] + \
+                    " #" + oConditionObject["condition_field"] + ' ' + oConditionObject['condition_op'] + " :" + oConditionObject["condition_field"]
+    
+    print('sKeyConditionExpression')
+    print(sKeyConditionExpression)
+    print('sFilterConditionExpression')
+    print(sFilterConditionExpression)
+    print('oExpressionAttributeValues')
+    print(oExpressionAttributeValues)
+    print('oExpressionAttributeNames')
+    print(oExpressionAttributeNames)
     
     if sKeyConditionExpression != "" and sFilterConditionExpression != "":
         
@@ -433,26 +394,13 @@ def queryItemWithProjection(oTableObject, oDynQueryObject, oKeyObject, sProjecti
     }
 
     return oDataResponse
-    
+
 def deleteItem(oKeyObject, oTableObject):
 
     oResponseObject = oTableObject.delete_item(Key=oKeyObject)
 
     return oResponseObject
 
-def getKeyObject(sTableName, oTableKeyObject):
-    
-    # example of oKeyObject
-    #oTableKeyObject = {
-    #    "table_name_1": ["field_1","field_2"],
-    #    "table_name_2": ["field_1","field_2"]
-    #}
-    
-    if sTableName in oTableKeyObject:
-        return oTableKeyObject[sTableName]
-    else:
-        return None
-        
 class DecimalEncoder(json.JSONEncoder):
   def default(self, obj):
     if isinstance(obj, Decimal):
