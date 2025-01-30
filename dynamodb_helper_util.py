@@ -48,74 +48,6 @@ def add_item(item, table):
     """Add an item to a DynamoDB table."""
     return table.put_item(Item=item)
 
-
-def scan_items(table, query_params=None):
-    """
-    Scan a DynamoDB table.
-    Args:
-        table: DynamoDB table object.
-        query_params: Optional query parameters for filtering.
-
-    Returns:
-        dict: Scan results in OData format.
-    """
-    items = []
-    if not query_params:
-        response = table.scan()
-        items.extend(response['Items'])
-
-        while 'LastEvaluatedKey' in response:
-            response = table.scan(ExclusiveStartKey=response['LastEvaluatedKey'])
-            items.extend(response['Items'])
-    else:
-        expression_attr_values = {}
-        expression_attr_names = {}
-        filter_expression = ""
-
-        for condition in query_params:
-            condition_value = (
-                int(condition['condition_value'][1:-1])
-                if condition['condition_value'][0] != '\''
-                else condition['condition_value'][1:-1]
-            )
-
-            expression_attr_values[f":{condition['condition_field']}"] = condition_value
-            expression_attr_names[f"#{condition['condition_field']}"] = condition['condition_field']
-
-            filter_condition = (
-                f"#{condition['condition_field']} {condition['condition_op']} "
-                f":{condition['condition_field']}"
-            )
-
-            if filter_expression:
-                filter_expression += f" {condition['next_condition_logic']} {filter_condition}"
-            else:
-                filter_expression = filter_condition
-
-        response = table.scan(
-            FilterExpression=filter_expression,
-            ExpressionAttributeValues=expression_attr_values,
-            ExpressionAttributeNames=expression_attr_names
-        )
-        items.extend(response['Items'])
-
-        while 'LastEvaluatedKey' in response:
-            response = table.scan(
-                FilterExpression=filter_expression,
-                ExpressionAttributeValues=expression_attr_values,
-                ExpressionAttributeNames=expression_attr_names,
-                ExclusiveStartKey=response['LastEvaluatedKey']
-            )
-            items.extend(response['Items'])
-
-    return {
-        "d": {
-            "__count": len(items),
-            "results": items
-        }
-    }
-
-
 def parse_query_string(query_string, condition_list):
     """
     Parse a query string into a condition list.
@@ -229,7 +161,77 @@ def is_key(field_name, key_object):
     """
     return key_object is None or field_name in key_object
 
-def query_item(table, query_conditions, key_object):
+def scan_items(table, query_params=None, projection_expression=None):
+    """
+    Scan a DynamoDB table.
+    Args:
+        table: DynamoDB table object.
+        query_params: Optional query parameters for filtering.
+        projection_expression: Optional projection expression.
+
+    Returns:
+        dict: Scan results in OData format.
+    """
+    items = []
+    scan_kwargs = {}
+
+    if projection_expression:
+        scan_kwargs["ProjectionExpression"] = projection_expression
+
+    if not query_params:
+        response = table.scan(**scan_kwargs)
+        items.extend(response['Items'])
+
+        while 'LastEvaluatedKey' in response:
+            response = table.scan(ExclusiveStartKey=response['LastEvaluatedKey'], **scan_kwargs)
+            items.extend(response['Items'])
+    else:
+        expression_attr_values = {}
+        expression_attr_names = {}
+        filter_expression = ""
+
+        for condition in query_params:
+            condition_value = (
+                int(condition['condition_value'][1:-1])
+                if condition['condition_value'][0] != '\''
+                else condition['condition_value'][1:-1]
+            )
+
+            expression_attr_values[f":{condition['condition_field']}"] = condition_value
+            expression_attr_names[f"#{condition['condition_field']}"] = condition['condition_field']
+
+            filter_condition = (
+                f"#{condition['condition_field']} {condition['condition_op']} "
+                f":{condition['condition_field']}"
+            )
+
+            if filter_expression:
+                filter_expression += f" {condition['next_condition_logic']} {filter_condition}"
+            else:
+                filter_expression = filter_condition
+
+        scan_kwargs.update({
+            "FilterExpression": filter_expression,
+            "ExpressionAttributeValues": expression_attr_values,
+            "ExpressionAttributeNames": expression_attr_names,
+        })
+
+        response = table.scan(**scan_kwargs)
+        items.extend(response['Items'])
+
+        while 'LastEvaluatedKey' in response:
+            response = table.scan(ExclusiveStartKey=response['LastEvaluatedKey'], **scan_kwargs)
+            items.extend(response['Items'])
+
+    return {
+        "d": {
+            "__count": len(items),
+            "results": items
+        }
+    }
+
+
+def query_item(table, query_conditions, key_object, projection_expression=None):
     """
     Query or scan a DynamoDB table based on conditions.
     
@@ -237,6 +239,7 @@ def query_item(table, query_conditions, key_object):
         table: DynamoDB table object.
         query_conditions: List of condition objects for filtering.
         key_object: Key schema of the table to distinguish key attributes.
+        projection_expression: Optional projection expression.
 
     Returns:
         dict: Query or scan results in OData format.
@@ -274,35 +277,38 @@ def query_item(table, query_conditions, key_object):
                 else condition_expression
             )
 
-    # Determine whether to query or scan
+    query_kwargs = {
+        "ExpressionAttributeValues": expression_values,
+        "ExpressionAttributeNames": expression_names
+    }
+
+    if projection_expression:
+        query_kwargs["ProjectionExpression"] = projection_expression
+
     items = []
     if key_condition and filter_condition:
         # Query with both key and filter conditions
         response = table.query(
-            ExpressionAttributeValues=expression_values,
-            ExpressionAttributeNames=expression_names,
             KeyConditionExpression=key_condition,
-            FilterExpression=filter_condition
+            FilterExpression=filter_condition,
+            **query_kwargs
         )
-        items = collect_all_items(response, table, expression_values, expression_names, key_condition, filter_condition)
+        items = collect_all_items(response, table, expression_values, expression_names, key_condition, filter_condition, projection_expression)
     elif not key_condition and filter_condition:
         # Scan with filter condition only
         response = table.scan(
-            ExpressionAttributeValues=expression_values,
-            ExpressionAttributeNames=expression_names,
-            FilterExpression=filter_condition
+            FilterExpression=filter_condition,
+            **query_kwargs
         )
-        items = collect_all_items(response, table, expression_values, expression_names, filter_expression=filter_condition)
+        items = collect_all_items(response, table, expression_values, expression_names, filter_expression=filter_condition, projection_expression=projection_expression)
     else:
         # Query with key condition only
         response = table.query(
-            ExpressionAttributeValues=expression_values,
-            ExpressionAttributeNames=expression_names,
-            KeyConditionExpression=key_condition
+            KeyConditionExpression=key_condition,
+            **query_kwargs
         )
-        items = collect_all_items(response, table, expression_values, expression_names, key_condition)
+        items = collect_all_items(response, table, expression_values, expression_names, key_condition, projection_expression=projection_expression)
 
-    # Format results in OData format
     return {
         "d": {
             "__count": len(items),
@@ -311,7 +317,7 @@ def query_item(table, query_conditions, key_object):
     }
 
 
-def collect_all_items(initial_response, table, expression_values, expression_names, key_condition=None, filter_expression=None):
+def collect_all_items(initial_response, table, expression_values, expression_names, key_condition=None, filter_expression=None, projection_expression=None):
     """
     Collect all items from paginated responses for a query or scan operation.
     
@@ -322,26 +328,36 @@ def collect_all_items(initial_response, table, expression_values, expression_nam
         expression_names: Attribute names used in the query or scan.
         key_condition: Optional key condition expression.
         filter_expression: Optional filter condition expression.
+        projection_expression: Optional projection expression.
 
     Returns:
         list: Aggregated list of items.
     """
-    items = initial_response['Items']
+    items = initial_response.get('Items', [])
+    
     while 'LastEvaluatedKey' in initial_response:
         kwargs = {
-            "ExpressionAttributeValues": expression_values,
-            "ExpressionAttributeNames": expression_names,
             "ExclusiveStartKey": initial_response['LastEvaluatedKey']
         }
+
+        if expression_values:
+            kwargs["ExpressionAttributeValues"] = expression_values
+        if expression_names:
+            kwargs["ExpressionAttributeNames"] = expression_names
         if key_condition:
             kwargs["KeyConditionExpression"] = key_condition
         if filter_expression:
             kwargs["FilterExpression"] = filter_expression
+        if projection_expression:
+            kwargs["ProjectionExpression"] = projection_expression
 
+        # Perform query or scan based on the presence of key_condition
         initial_response = table.query(**kwargs) if key_condition else table.scan(**kwargs)
-        items.extend(initial_response['Items'])
+        items.extend(initial_response.get('Items', []))
 
     return items
+
+
 
 
 def delete_item(key, table):
