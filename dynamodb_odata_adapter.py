@@ -10,6 +10,18 @@ class DecimalEncoder(json.JSONEncoder):
             return str(obj)
         return super().default(obj)
 
+def execute_dynamodb_query_from_odata(table_object, query_string, key_object, projection_expression=None):
+    """
+    Execute a DynamoDB query from an OData query string.
+    """
+    # Parse the query string into a condition list
+    condition_list = parse_query_string(query_string, [])
+
+    # Format the response as an OData response
+    odata_response = query_item(table_object, condition_list, key_object, projection_expression)
+
+    return odata_response
+
 def parse_query_string(query_string, condition_list):
     """
     Parse a query string into a condition list.
