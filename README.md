@@ -1,111 +1,106 @@
-# DynamoDB Helper Utility
+# dynamodb_odata_adapter
 
-This Python module provides helper functions for interacting with AWS DynamoDB using the `boto3` library. It includes functions for listing tables, creating tables, adding items, querying items, scanning items, parsing query strings, and deleting items.
+**A lightweight Python utility that translates OData-style query strings into DynamoDB query parameters.**
 
-## Features
-- List all DynamoDB tables.
-- Create a new table.
-- Add items to a table.
-- Scan a table with optional filtering and projection expressions.
-- Query a table using key conditions and optional filters.
-- Parse a query string into a structured list of conditions.
-- Delete an item from a table.
+This utility simplifies handling frontend query filters (like `$filter=field eq 'value'`) and converts them into expressions compatible with AWS DynamoDB's `query()` and `scan()` methods.
 
-## Installation
+---
 
-Ensure you have `boto3` installed:
+## 🚀 Features
 
-```sh
-pip install boto3
+- Converts OData-style query strings into DynamoDB-compatible key and filter expressions.
+- Supports logical operators (`and`, `or`) and comparison operators (`eq`, `ne`, `gt`, `lt`, `ge`, `le`).
+- Handles nested attributes using dot notation (`field.subfield`).
+- Generates:
+  - `KeyConditionExpression`
+  - `FilterExpression`
+  - `ExpressionAttributeNames`
+  - `ExpressionAttributeValues`
+
+---
+
+## 📦 Installation
+
+```bash
+pip install urllib3 boto3
 ```
 
-## Usage
+Copy `dynamodb_odata_adapter.py` into your project directory.
 
-### Importing the Module
+---
+
+## 🧠 Usage
 
 ```python
-import json
-from decimal import Decimal
+from dynamodb_odata_adapter import parse_odata_query
+
+query_string = "$filter=pfy_com_id eq 'PFY001' and pfy_prd_var_id eq 'PRD001'"
+key_object = {"pfy_com_id": "hash", "pfy_prd_var_id": "range"}
+
+query_params = parse_odata_query(query_string, key_object)
+
+# Result:
+# {
+#     'KeyConditionExpression': ...,
+#     'FilterExpression': ...,
+#     'ExpressionAttributeNames': {...},
+#     'ExpressionAttributeValues': {...}
+# }
+```
+
+You can use the resulting `query_params` with `table.query()` or `table.scan()` from `boto3`.
+
+---
+
+## 🧪 Example with DynamoDB
+
+```python
 import boto3
-from your_module_name import *  # Replace with the actual module name
+from dynamodb_odata_adapter import parse_odata_query
 
-# Initialize DynamoDB resource
-session = boto3.Session()
-dynamo_resource = session.resource('dynamodb')
+dynamodb = boto3.resource('dynamodb')
+table = dynamodb.Table('YourTableName')
+
+query_string = "$filter=user_id eq 'U123' and is_active eq true"
+key_object = {"user_id": "hash"}
+
+params = parse_odata_query(query_string, key_object)
+
+response = table.query(**params)
 ```
 
-### List Tables
+---
 
-```python
-list_tables(dynamo_resource)
+## 🛠 Supported OData Operators
+
+| OData Operator | DynamoDB Equivalent |
+|----------------|---------------------|
+| eq             | =                   |
+| ne             | <>                  |
+| gt             | >                   |
+| ge             | >=                  |
+| lt             | <                   |
+| le             | <=                  |
+| and            | AND                 |
+| or             | OR                  |
+
+---
+
+## 📁 File Structure
+
+```
+dynamodb_odata_adapter.py
+README.md
 ```
 
-### Create a Table
+---
 
-```python
-table_config = {
-    "table_name": "Users",
-    "keys": [
-        {"name": "UserId", "key": "HASH", "type": "S"}
-    ],
-    "capacity": "small"
-}
+## 📜 License
 
-create_table(table_config, dynamo_resource)
-```
+MIT License
 
-### Add an Item
+---
 
-```python
-table = dynamo_resource.Table("Users")
-item = {"UserId": "123", "Name": "Alice", "Age": 30}
-add_item(item, table)
-```
+## 🙌 Contributing
 
-### Query Items
-
-```python
-filter_expression = "UserId eq '123'"
-condition_list = parse_query_string(filter_expression, [])
-table_keys = get_table_keys("Users", {"Users": ["UserId"]})
-
-data = query_item(table, condition_list, table_keys, projection_expression="UserId, Name")
-print(json.dumps(data, indent=2))
-```
-
-### Scan Items
-
-```python
-scan_result = scan_items(table, projection_expression="UserId, Name")
-print(json.dumps(scan_result, indent=2))
-```
-
-### Delete an Item
-
-```python
-key = {"UserId": "123"}
-delete_item(key, table)
-```
-
-## Example Query
-
-```python
-filter = "UserId eq '123'"
-condition_list = parse_query_string(filter, [])
-odata_list = query_item(table, condition_list, table_keys)
-print(json.dumps(odata_list, indent=2))
-```
-
-## Explanation
-- **`parse_query_string(query_string, condition_list)`**: Converts a string filter into a structured condition list.
-- **`query_item(table, query_conditions, key_object, projection_expression)`**: Queries a table based on conditions.
-- **`scan_items(table, query_params, projection_expression)`**: Scans a table with optional filtering and projection.
-- **`delete_item(key, table)`**: Deletes an item from the table.
-
-## Notes
-- Ensure the AWS credentials and permissions are configured correctly to access DynamoDB.
-- The **projection expression** allows retrieving only specific attributes, optimizing query performance.
-
-## License
-This project is licensed under the MIT License.
-
+PRs and suggestions welcome! Feel free to fork and enhance for your own use cases.
